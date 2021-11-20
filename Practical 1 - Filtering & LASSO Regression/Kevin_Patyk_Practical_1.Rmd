@@ -1,0 +1,290 @@
+---
+title: "Practical 1"
+author: "Kevin Patyk"
+date: "11/18/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
+```
+
+# Introduction
+
+In this practical, we will deal with the curse of dimensionality by applying the “bet on sparsity”. We will use the following packages in the process:
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(glmnet)
+```
+
+-----
+
+# Gene expression data
+
+The data file we will be working with is gene expression data. Using microarrays, the expression of many genes can be measured at the same time. The data file contains expressions for 54675 genes with IDs such as 1007_s_at, 202896_s_at, AFFX-r2-P1-cre-3_at. (NB: these IDs are specific for this type of chip and need to be converted to actual gene names before they can be looked up in a database such as “GeneCards”). The values in the data file are related to the amount of RNA belonging to each gene found in the tissue sample.
+
+The goal of the study for which this data was collected is one of exploratory cancer classification: are there differences in gene expression between tissue samples of human prostates with and without prostate cancer?
+
+**1: Read the data file gene_expressions.rds using read_rds(). What are the dimensions of the data? What is the sample size?**
+```{r}
+gene <- read_rds("gene_expression.rds")
+
+dim(gene) 
+```
+
+The sample size of the data is 237 and there are 54,676 variables. 
+
+**2: As always, visualisation is a good idea. Create histograms of the first 6 variables. Describe what you notice.**
+```{r message=FALSE, warning=FALSE}
+gene_hist <- gene[, 2:7]
+colnames(gene_hist) <- c(paste("Gene", 1:6, sep = "_"))
+
+plots <- list()
+for(i in names(gene_hist)){
+    plots[[i]] <- ggplot(data = gene_hist, aes_string(x = i)) +
+    geom_histogram(color = "black", fill = "red") +
+    ggtitle(paste("Histogram for", i, sep = " "))
+}
+
+plots
+```
+
+It can also be plotted like so (so that it can all be in one graph rather than separately):
+```{r}
+gene[, 1:7] %>% 
+  pivot_longer(-sample, names_to = "gene") %>% 
+  ggplot(aes(x = value, fill = gene)) +
+  geom_histogram(colour = "black", bins = 35) +
+  theme_minimal() +
+  facet_wrap(~gene) +
+  labs(x = "Expression", y = "Count") +
+  scale_fill_viridis_d(guide = "none")
+```
+
+* `Gene_1`: Also known as `1007_s_at`, is negatively skewewed, with outliers falling between 0 and 9.5. Most observation fall between 10 and 11, with the peak at about 10.5. 
+
+* `Gene_2`: Also known as `1053_at`, has most of the observations falling between 7 and 9. However, there is one outlier that is nearly at 10. The peak of the distribution is at about 7.75. 
+
+* `Gene_3`: Also known as `117_at`, is positively skewed, with outliers galling between 8.5 and 12. Most observations fall between 4 and 8. The peak of the distribution is at about 6. 
+
+* `Gene_4`: Also known as `121_at`, has most of the observations between 6 and 7.5. There are 2 outliers that are at about 8.5. The peak of the distribution is at about 6.5. 
+
+* `Gene_5`: Also known as `1255_g_at`, is severely positively skewed. Most of the observations fall between 0 and 4. However, there are 2 observations at about 5 and 1 observation at nearly 7. The peak of the distribution is at about 3. 
+
+* `Gene_6`: Also known as `1294_at`, has most observations between 7.5 and 9.5. There are some observations that are above below 7 and above 9.5. 
+
+The histograms are approximately normally distributed. 
+
+**3: We now only have the gene expression data, but the labels are in the file `phenotypes.rds`. Load that file, `select()` the relevant columns for classification into normal and tumor tissue, and `join()` it with the gene expression data, based on the tissue identifier in the sample column. Give the resulting dataset a good name!**
+```{r message=FALSE, warning=FALSE}
+pheno <- read_rds(file = "phenotypes.rds")
+
+gene_class <- pheno %>%
+  mutate(disease = as_factor(disease)) %>%
+  select(sample, disease) %>% 
+  right_join(gene)
+```
+
+Be careful when using `join()` functions because some will results in missing values, depending on which dataset is on the left or right. 
+
+* `inner_join()`: includes all rows in x and y.
+
+* `left_join()`: includes all rows in x.
+
+* `right_join()`: includes all rows in y.
+
+* `full_join()`: includes all rows in x or y.
+
+**4: Does this dataset suffer from class imbalance?**
+```{r}
+table(gene_class$disease) 
+
+#or
+
+prop.table(table(gene_class$disease))
+```
+
+No, this dataset does not suffer from class imbalance. Normal has 116 observations and tumor has 121, making the difference between them only 5, which is good. 
+
+**5: Split the data into a training (80%) and a test set (20%). We will use the training set for model development in the next section.**
+```{r}
+set.seed(45)
+train_idx <- sample(237, 190)
+gene_train <- gene_class[train_idx,]
+gene_test  <- gene_class[-train_idx,]
+```
+
+Can also do it this way:
+```{r echo=FALSE, eval=FALSE}
+set.seed(45)
+gene_class$splits <- sample(rep(c("train", "test"), times = c(190, 47)))
+
+gene_train <- gene_class %>%
+  filter(splits == "train") %>%
+  select(-splits)
+  
+gene_test <- gene_class %>%
+  filter(splits == "test") %>%
+  select(-splits)
+```
+
+-----
+
+# Correlation filter & logistic regression
+
+In this section, we will perform class prediction with this dataset using filtering and logistic regression. For the model development parts, use the training dataset.
+
+**6: Use a correlation filter to find the IDs of the 10 genes that are most related to disease status.**
+```{r echo=FALSE, eval=FALSE}
+#make the outcome numeric
+y <- ifelse(gene_train$disease == "normal", 0, 1)
+
+#coercing to data frame and removing non-numeric columns 
+gene_train_cor <- gene_train %>% 
+  select(-disease, -sample) %>%
+  as.data.frame(gene_train) 
+
+#using a for loop to iterate over the columns of the data frame and get the correlations with the outcome
+stor <- list()
+for(i in 1:ncol(gene_train_cor)){
+  stor[[i]] <- cor.test(x = gene_train_cor[, i], y = y)$estimate
+}
+
+#getting the indices for the values with the highest correlations
+cor_vec <- abs(order(unlist(stor), decreasing = T))
+cor_vec[1:10]
+
+#getting the values with the highest correlations
+cor_vec_2 <- abs(sort(unlist(stor), decreasing = T))
+cor_vec_2[1:10]
+
+#getting the names of the genes with the highest correlations with the outcome 
+high_cor <- colnames(gene_train)[cor_vec[1:10]]
+high_cor
+```
+
+It can also be done this way:
+```{r}
+# get disease status as an indicator (for the cor function)
+y <- as.numeric(gene_train$disease == "tumor") #this will turn the values into T/F first and then into numeric (1s and 0s) - this is a quick way to do it without ifelse() 
+
+# get the gene expressions as a matrix (for the apply function)
+X <- gene_train %>%
+    select(-disease, -sample) %>% 
+    as.matrix()
+
+# use the apply function to get a correlation of every column (margin = 2) with the disease status
+cors <- apply(X, 2, cor, y = y)
+
+# select the 10 most correlating genes (don't forget the abs() function!)
+(cors_10 <- sort(abs(cors), decreasing = TRUE)[1:10])
+```
+
+
+**7: Perform logistic regression, predicting the outcome using the selected genes. Name the fitted object fit_lr.**
+```{r}
+lr_mod <- glm(formula = disease ~ `209424_s_at` + `242138_at` + `209426_s_at` + `232575_at` + `209425_at` + 
+  `206858_s_at` + `207147_at` + `204934_s_at` + `236365_at` + `217111_at`, family = "binomial", data = gene_train)
+
+summary(lr_mod)
+```
+
+**8: Create a confusion matrix for the predictions of this model on the test set. What is the accuracy of this model?**
+```{r}
+pred_new_tab <- predict(object = lr_mod, newdata = gene_test, type = "response")
+pred_new_tab <- ifelse(pred_new_tab > 0.5, "Yes", "No")
+
+tab_log <- table(true = gene_test$disease, predicted = pred_new_tab)
+tab_log
+
+sum(diag(tab_log))/sum(tab_log)
+```
+
+The accuracy is 89%. 
+
+-----
+
+# Regularized regression
+
+In this section, we will use the `glmnet` package to perform LASSO regression, which will automatically set certain coefficients to 0. The first step in performing LASSO regression is to prepare the data in the correct format. Read the help file of `glmnet()` to figure out what the x and y inputs should be.
+
+**9: Prepare your data for input into glmnet. Create `x_train`, `y_train`, `x_test`, and `y_test`.**
+```{r}
+#train
+x_train <- gene_train %>% select(-sample, -disease) %>% as.matrix()
+y_train <- gene_train %>% pull(disease)
+
+#test 
+x_test <- gene_test %>% select(-sample, -disease) %>% as.matrix()
+y_test <- gene_test %>% pull(disease)
+```
+
+**10: Use the `glmnet` function to fit a LASSO regression. Use the `plot()` function on the fitted model and describe what you see.**
+```{r}
+mod1_glm <- glmnet(x = x_train, # X matrix without intercept 
+                   y = y_train, # Salary as response
+                   family = "binomial", # Normally distributed errors
+                   alpha = 1) # LASSO Penalty
+plot(mod1_glm)
+```
+
+How to interpret this plot: Each line is a coefficient, with its value on the y-axis. On the x - axis we see the total budget for the parameters. As we decrease the budget (right-to-left), the coefficients shrink towards 0. Decreasing the budget further, some coefficients will become exactly 0, which is shown in the number of non-zero parameters (on top).
+
+The next step is finding the right penalization parameter λ. In other words, we need to tune this hyperparameter. We want to select the hyperparameter which yields the best out-of-sample prediction performance. We could do this by further splitting the training dataset into a train and development subset, or with cross-validation. In this case, we will use the built-in cross-validation function of the glmnet package: `cv.glmnet`.
+
+**11: Run `cv.glmnet` for your dataset. Run the `plot()` function on the resulting object. Explain in your own words what you see. NB: Do not forget to set `family = "binomial"` to ensure that you are running logistic regression.**
+
+Lambda should should be tuned on the training data so that it is not exposed to the test data, making it biased. The `cv.glmnet()` function does run a LASSO regression with the best lambda., so you do not need to make another model using the best lambda value. 
+```{r}
+mod2_glm <- cv.glmnet(x = x_train, 
+                      y = y_train,
+                      nfolds = 10,
+                      family = "binomial")
+plot(mod2_glm)
+```
+
+We see a plot with on the x-axis the log of the penalty (complexity) and on the y axis the binomial deviance (lack of fit). On top, there is the number of nonzero parameters. The cross-validation procedure has computed for different levels of lambda the out-of-sample deviance. 
+
+If we go to the right, the cross-validation error increases, but also not by a lot in first instance. The dashed line on the right, indicates the largest possible lambda value (and thus the simplest model) within 1SE from the estimated MSE of the "best" model. The dashed line on the left indicates the optimal value for lambda. When we continue going to the right, the model becomes too simple and hence the bias increases quite substantially.
+
+**12: Inspect the nonzero coefficients of the model with the lowest out-of-sample deviance. Hint: use the `coef()` function, and make sure to use the right value for the s argument to that function. Do you see overlap between the correlation filter selections and the LASSO results?**
+```{r}
+#saving the coefficients
+coefs_1se <- coef(mod2_glm, s = "lambda.min") 
+
+#saving the coefficients with a non-zero index
+nonzero_idx <- which(coefs_1se[,1] != 0)
+
+#subsetting the coefficients so that it only displays indices which are nonzero
+coefs_1se[nonzero_idx,]
+
+# using this train-test split, the following genes are in both selections
+intersect(names(cors_10), names(coefs_1se[nonzero_idx,]))
+```
+
+There are some (5) that overlap, but it is not complete overlap.
+
+**13: Use the `predict()` function on the fitted `cv.glmnet` object to predict disease status for the test set based on the optimized lambda value. Create a confusion matrix and compare this with the logistic regression model we made earlier in terms of accuracy.**
+```{r}
+#creating predictions using the test set
+pred_glmnet <- predict(mod2_glm, newx = x_test, s = "lambda.min", type = "response")
+
+#creating a confusion matrix
+tab_pred <- table(observed = gene_test$disease, predicted = ifelse(pred_glmnet > 0.5, "tumor", "normal"))
+
+#calculating the accuracy
+sum(diag(tab_pred))/sum(tab_pred)
+```
+
+Now, the accuracy is 91%. So, it is a slight improvement over the correlation filter that was used. 
+
+-----
+
+# End of document
+
+-----
+
+```{r}
+sessionInfo()
+```
+
