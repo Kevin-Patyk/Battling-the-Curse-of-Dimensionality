@@ -1,4 +1,4 @@
-# Battling-the-Curse-of-Dimensionality
+# Battling the Curse of Dimensionality
 
 This repository is where I store all of my R scripts and HTML files from practicals and assignments for this course at Utrecht University.
 
