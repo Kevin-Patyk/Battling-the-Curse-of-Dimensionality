@@ -1,5 +1,9 @@
 # Battling-the-Curse-of-Dimensionality
 
+This repository is where I store all of my R scripts and HTML files from practicals and assignments for this course at Utrecht University.
+
+# Course Description
+
 The ever-growing influx of data allows us to develop, interpret and apply an increasing set of learning techniques. However, with this increase in data comes a challenge: how to make sense of the data and identify the components that really matter in our modeling efforts. This course gives a detailed and modern overview of statistical learning with a specific focus on high-dimensional data.
 
 In this course we emphasize the tools that are useful in solving and interpreting modern-day analysis problems. Many of these tools are essential building blocks that are often encountered in statistical learning. We also consider the state-of-the-art in handling machine learning problems. We will not only discuss the theoretical underpinnings of supervised learning, but focus also on the skills and experience to rapidly apply these techniques to new problems.
