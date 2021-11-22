@@ -275,6 +275,7 @@ gene_test  &lt;- gene_class[-train_idx,]</code></pre>
 <h1>Correlation filter &amp; logistic regression</h1>
 <p>In this section, we will perform class prediction with this dataset using filtering and logistic regression. For the model development parts, use the training dataset.</p>
 <p><strong>6: Use a correlation filter to find the IDs of the 10 genes that are most related to disease status.</strong></p>
+<p><em>NOTE:</em> If you are working with a <code>tibble</code> from the <code>tidyverse</code> and try to extract a column, it will not be a vector, rather a list of length (1). So, if you want to run a <code>for</code> loop or <code>lapply()</code> over a <code>tibble</code>, convert it to a data frame or a matrix first.</p>
 <p>It can also be done this way:</p>
 <pre class="r"><code># get disease status as an indicator (for the cor function)
 y &lt;- as.numeric(gene_train$disease == &quot;tumor&quot;) #this will turn the values into T/F first and then into numeric (1s and 0s) - this is a quick way to do it without ifelse() 

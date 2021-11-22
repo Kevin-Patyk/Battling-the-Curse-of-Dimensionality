@@ -163,6 +163,8 @@ high_cor <- colnames(gene_train)[cor_vec[1:10]]
 high_cor
 ```
 
+*NOTE:* If you are working with a `tibble` from the `tidyverse` and try to extract a column, it will not be a vector, rather a list of length (1). So, if you want to run a `for` loop or `lapply()` over a `tibble`, convert it to a data frame or a matrix first. 
+
 It can also be done this way:
 ```{r}
 # get disease status as an indicator (for the cor function)
