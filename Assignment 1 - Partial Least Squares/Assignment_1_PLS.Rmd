@@ -1,0 +1,147 @@
+---
+title: "Assignment 1 - Partial Least Squares"
+author: "Kevin Patyk, Michael Koch, & Sander van Gestel"
+date: "11/29/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
+```
+
+# Loading libraries
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(pls)
+library(glmnet)
+```
+
+-----
+
+# Loading and inspecting the data
+
+Importing the `corn.rds` data.
+```{r}
+corn <- read_rds("corn.rds")
+```
+
+Examining the first 6 observations.
+```{r}
+head(corn)
+```
+
+Getting the number of rows and columns.
+```{r}
+dim(corn)
+```
+
+-----
+
+# Conducting the analysis
+
+**1: Pick a property (`Moisture`, `Oil`, `Starch`, or `Protein`) to predict.**
+```{r}
+outcome <- corn$Moisture
+```
+
+**2: Split your data into a training (80%) and test (20%) set.**
+```{r}
+#splitting the training and testing data
+set.seed(45)
+corn$splits <- sample(rep(c("train", "test"), times = c(64, 16)))
+
+corn_train <- corn %>%
+  filter(splits == "train") %>%
+  select(-c(splits, Oil, Starch, Protein))
+  
+corn_test <- corn %>%
+  filter(splits == "test") %>%
+  select(-c(splits, Oil, Starch, Protein))
+```
+
+**3: Use the function `plsr` from the package `pls` to estimate a partial least squares model, predicting the property using the NIR spectroscopy measurements in the training data. Make sure that the features are on the same scale. Use leave-one-out cross-validation (built into `plsr`) to estimate out-of-sample performance.**
+```{r}
+mod_1 <- plsr(Moisture ~ ., center = T, scale = T, validation = "LOO", data = corn_train)
+```
+
+**4: Find out which component best predicts the property you chose. Explain how you did this.**
+```{r}
+#getting a summary of the model 
+summary(mod_1)
+```
+
+According to the output, the first component best predicts the outcome that we chose (`Moisture`). This is because the first component explains 34.89% of the variance in `Moisture`, with each subsequent component explaining less and less variation in `Moisture`. This makes sense since the first component maximizes the covariance between `x` and `y`. 
+
+**5: Create a plot with on the x-axis the wavelength, and on the y-axis the strength of the loading for this component. Explain which wavelengths are most important for predicting the property you are interested in.**
+```{r}
+#creating a separate dating frame for the loading info 
+load_info <- data.frame(
+  "Loadings" = mod_1$loadings[1:700],
+  "Wavelength" = seq(1100, 2498, 2))
+
+#creating a plot
+load_info %>%
+  ggplot(aes(x = Wavelength, y = Loadings)) +
+  geom_line(size = 1, color = "blue") +
+  labs(title = "Loading Values per Wavelength") +
+  scale_x_continuous(n.breaks = 10) +
+  theme_minimal()
+```
+
+In the plot it can be seen that wavelengths between 1400 and 1600 have the strongest loadings. Therefore wavelengths between 1400 and 1600 seem to be the most important in predicting the outcome `Moisture`. 
+
+**6: Pick the number of components included in the model based on the “one standard deviation” rule (`selectNcomp()`). Create predictions for the test set using the resulting model.**
+```{r}
+#selecting the number of components based on the one standard deviation rule
+selectNcomp(mod_1, method = "onesigma")
+
+#creating predictions using the one standard deviation rules
+pcr_pred_2 <- predict(mod_1, corn_test, ncomp = 1:16)
+
+#calculating the mse for the model
+mse_pls <- mean((pcr_pred_2 - corn_test$Moisture)^2)
+```
+
+**7: Compare your PLS predictions to a LASSO linear regression model where lambda is selected based on cross-validation with the one standard deviation rule (using `cv.glmnet`).**
+```{r}
+#training sets
+x_train <- corn_train %>% as.matrix()
+y_train <- corn_train %>% pull(Moisture)
+
+#testing sets
+x_test <- corn_test %>% as.matrix()
+y_test <- corn_test %>% pull(Moisture)
+
+#running the lasso linear regression model
+mod_2 <- cv.glmnet(x = x_train, # X matrix without intercept 
+                   y = y_train, # Salary as response
+                   family = "gaussian", # Normally distributed errors
+                   alpha = 1, # LASSO Penalty
+                   nfolds = 10) 
+
+#creating predictions using the test set
+pred_mod_2 <- predict(mod_2, newx = x_test, s = "lambda.min")
+
+#calculating the mse for the model
+mse_lasso <- mean((pred_mod_2  - y_test)^2)
+
+#mse values
+mse_pls
+mse_lasso
+
+#pls mse vs lasso 
+mse_pls < mse_lasso
+```
+
+The LASSO linear regression model has a lower out-of-sample MSE and performs better than the PLS regression model. 
+
+-----
+
+# End of document
+
+-----
+
+```{r}
+sessionInfo()
+```
+
