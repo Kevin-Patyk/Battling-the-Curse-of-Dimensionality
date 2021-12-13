@@ -1,0 +1,273 @@
+---
+title: "Practical 4 - Neural Networks"
+author: "Kevin Patyk"
+date: "12/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+In this practical, we will create a feed-forward neural network as well as a convolutional neural network to analyze the famous MNIST dataset.
+```{r warning=FALSE, message=FALSE}
+library(tidyverse)
+library(keras)
+```
+
+-----
+
+# Take-home exercises: deep feed-forward neural network
+
+## Data preparation 
+
+In this section, we will develop a deep feed-forward neural network for MNIST.
+
+**1: Load the built-in MNIST dataset by running the following code. Then, describe the structure and contents of the `mnist` object.**
+```{r}
+mnist <- dataset_mnist()
+
+#checking the structure
+str(mnist)
+
+#checking the values in the input features
+range(mnist$train$x)
+range(mnist$test$x)
+
+#checking the values for the outputs - we can also use this to check class imbalance 
+table(mnist$train$y)
+table(mnist$test$y)
+```
+
+The `mnist` object is a list containing testing and training data. The training data consists of 60,000 observations with `x` (inputs) and `y` (outcome). The `x` values are in an array with dimensions 60,000 x 28 x 28. The `y` values are in an 1-dimensional array and have 60,000 values. The `x` numbers from 0-255. The possible values for the `y` variable are 0-9. The testing data consists of 10,000 observations with `x` (inputs) and `y` (outcome). The `x` values are in an array with dimensions 10,000 x 28 x 28. The `x` numbers from 0-255. The `y` values are in an 1-dimensional array and have 10,000 values. The `x` values consists of many zeros and other integers, but it is hard to make sense of since it is so large. The possible values for the `y` variable are 0-9. The classes are balanced enough to proceed. 
+
+Plotting is very important when working with image data. We have defined a convenient plotting function for you.
+
+**2: Use the `plot_img()` function below to plot the first training image. The `img `parameter has to be a matrix with dimensions (28, 28). NB: indexing in 3-dimensional arrays works the same as indexing in matrices, but you need an extra comma x[,,].**
+```{r}
+plot_img <- function(img, col = gray.colors(255, start = 1, end = 0), ...) {
+  image(t(img), asp = 1, ylim = c(1.1, -0.1), col = col, bty = "n", axes = FALSE, ...)
+}
+
+plot_img((mnist$train$x[1,,]))
+```
+
+It is usually a good idea to normalize your features to have a manageable, standard range before entering them in neural networks.
+
+**3: As a preprocessing step, ensure the brightness values of the images in the training and test set are in the range (0, 1).**
+```{r}
+#the divide by in R is completely vectorized, so we do not need a for loop 
+mnist$train$x <- mnist$train$x/255
+mnist$test$x <- mnist$test$x/255
+```
+
+## Multinomial logistic regression 
+
+The simplest model is a multinomial logistic regression model, where we have no hidden layers and 10 outputs (0-1). That model is shown below.
+
+**4: Display a summary of the multinomial model using the summary() function. Describe why this model has 7850 parameters.**
+```{r}
+multinom  <- 
+  keras_model_sequential(input_shape = c(28, 28)) %>% # initialize a sequential model
+  layer_flatten() %>% # flatten 28*28 matrix into single vector
+  layer_dense(10, activation = "softmax") # softmax outcome == logistic regression for each of 10 outputs
+
+multinom$compile(
+  loss = "sparse_categorical_crossentropy", # loss function for multinomial outcome
+  optimizer = "adam", # we use this optimizer because it works well
+  metrics = list("accuracy") # we want to know training accuracy in the end
+)
+
+summary(multinom)
+```
+
+The network has 7,850 parameters because there are 784 inputs (pixels) and one parameter per outcome, of which there are 10. This results in 784*10 = 7,840 parameters. Then, 10 more parameters are added due to the biases, coming out to a total of 7,850. 
+
+**5: Train the model for 5 epochs using the code below. What accuracy do we obtain in the validation set? (NB: the `multinom` object is changed “in-place”, which means you don’t have to assign it to another variable)**
+```{r}
+multinom %>% fit(x = mnist$train$x, y = mnist$train$y, epochs = 5, validation_split = 0.2, verbose = 1)
+```
+
+The accuracy that we obtained in the training set is 93.14%. (The number here may be different to the output because running it again changes the accuracy)
+
+**6: Train the model for another 5 epochs. What accuracy do we obtain in the validation set?**
+```{r}
+multinom %>% fit(x = mnist$train$x, y = mnist$train$y, epochs = 5, validation_split = 0.2, verbose = 1)
+```
+
+The accuracy that we obtained in the training set for the second round is 93.93%. There is a slight improvement when adding 5 more epochs. (The number here may be different to the output because running it again changes the accuracy)
+
+## Feed-forward neural networks
+
+**7: Create and compile a feed-forward neural network with the following properties. Ensure that the model has 50890 parameters.**
+
+* sequential model
+* flatten layer
+* dense layer with 64 hidden units and “relu” activation function
+* dense output layer with 10 units and softmax activation function
+
+You may reuse code from the multinomial model.
+```{r}
+feedfor <- 
+  keras_model_sequential(input_shape = c(28, 28)) %>% # initialize a sequential model
+  layer_flatten() %>% # flatten 28*28 matrix into single vector
+  layer_dense(64, activation = "relu") %>% #relu activation with 64 hidden units  
+  layer_dense(10, activation = "softmax") # softmax outcome == logistic regression for each of 10 outputs
+
+feedfor$compile(
+  loss = "sparse_categorical_crossentropy", # loss function for multinomial outcome
+  optimizer = "adam", # we use this optimizer because it works well
+  metrics = list("accuracy") # we want to know training accuracy in the end
+)
+
+summary(feedfor)
+```
+
+**7: Train the model for 10 epochs. What do you see in terms of validation accuracy, also compared to the multinomial model?**
+```{r}
+feedfor %>% fit(x = mnist$train$x, y = mnist$train$y, epochs = 10, validation_split = 0.2, verbose = 1)
+```
+
+The accuracy of the model is 97.20%. This is a substantial increase when compared to the multinomial model, which had an accuracy of 93.93%. (The number here may be different to the output because running it again changes the accuracy)
+
+**8: Create predictions for the test data using the two trained models (using the function below). Create a confusion matrix and compute test accuracy for these two models. Write down any observations you have.**
+```{r}
+#you can not drop dimensions using drop = FALSE when subsetting using brackets []
+class_predict <- function(model, x_train) predict(model, x = x_train) %>% apply(1, which.max) - 1
+
+predict_multinom <- class_predict(multinom, mnist$test$x)
+predict_ffnn <- class_predict(feedfor, mnist$test$x)
+
+(ctab_multinom <- table(pred = predict_multinom, true = mnist$test$y))
+(ctab_ffnn <- table(pred = predict_ffnn, true = mnist$test$y))
+```
+
+In this multinomial model, it is evident that there are more on the off-diagonal (which indicates misclassifications). 
+
+**9 (Optional): If you have time, create and estimate (10 epochs) a deep feed-forward model with the following properties. Compare this model to the previous models on the test data.**
+
+* sequential model
+* flatten layer
+* dense layer with 128 hidden units and “relu” activation function
+* dense layer with 64 hidden units and “relu” activation function
+* dense output layer with 10 units and softmax activation function
+```{r}
+deepfeedfor <- 
+  keras_model_sequential(input_shape = c(28, 28)) %>% # initialize a sequential model
+  layer_flatten() %>% # flatten 28*28 matrix into single vector
+  layer_dense(128, activation = "relu") %>% #relu activation with 128 hidden units  
+  layer_dense(64, activation = "relu") %>% #relu activation with 64 hidden units  
+  layer_dense(10, activation = "softmax") # softmax outcome == logistic regression for each of 10 outputs
+
+deepfeedfor$compile(
+  loss = "sparse_categorical_crossentropy", # loss function for multinomial outcome
+  optimizer = "adam", # we use this optimizer because it works well
+  metrics = list("accuracy") # we want to know training accuracy in the end
+)
+
+summary(deepfeedfor)
+```
+
+Now, to run the model.
+```{r}
+deepfeedfor %>% fit(x = mnist$train$x, y = mnist$train$y, epochs = 10, validation_split = 0.2, verbose = 1)
+```
+
+The accuracy of this model is 97.38%. This is a little better than the previous model, which had an accuracy of 97.20%. (The number here may be different to the output because running it again changes the accuracy)
+
+The reason we are looking at the validation accuracy is because we want to see an estimate of performance out of the training set. You could theoretically keep increasing the number of epochs to increase the training accuracy to get higher, but this would be pointless if the out-of-sample accuracy did not improve since such a high accuracy would only apply to the training set and lead to overfitting. 
+
+-----
+
+# Lab exercise: Convolutional neural networks 
+
+Convolution layers in `Keras` need a specific form of data input. For each example, they need a (width, height, channels) array (tensor). For a color image with 28*28 dimension, that shape is usually (28, 28, 3), where the channels indicate red, green, and blue. MNIST has no color info, but we still need the channel dimension to enter the data into a convolution layer with shape (28, 28, 1). The training dataset `x_train` should thus have shape (60000, 28, 28, 1).
+
+**10: add a “channel” dimension to the training and test data using the following code. Plot an image using the first channel of the 314th training example (this is a 9).**
+```{r}
+# add channel dimension to input (required for convolution layers)
+dim(mnist$train$x) <- c(dim(mnist$train$x), 1)
+dim(mnist$test$x)  <- c(dim(mnist$test$x), 1)
+
+#plotting the image
+plot_img((mnist$train$x[314,,,]))
+```
+
+**11: Create and compile a convolutional neural network using the following code. Describe the different layers in your own words.**
+```{r}
+cnn <- 
+  keras_model_sequential(input_shape = c(28, 28, 1)) %>% 
+  layer_conv_2d(filters = 6, kernel_size = c(5, 5)) %>% 
+  layer_max_pooling_2d(pool_size = c(4, 4)) %>%
+  layer_flatten() %>% 
+  layer_dense(units = 32, activation = "relu") %>% 
+  layer_dense(10, activation = "softmax")
+
+cnn %>% 
+  compile(
+    loss = "sparse_categorical_crossentropy",
+    optimizer = "adam", 
+    metrics = c("accuracy")
+  )
+
+summary(cnn)
+```
+
+The first layer is a convolution layer with 6 filters. The second layer is a pooling layer with a size of 4x4. The input will be flatten (matrix to a vector). The first hidden layer has 32 hidden units using the ReLU activation function. The second hidden layer has 10 hidden units and the softmax activation function. For loss, we will be using cross entropy, the optimizer is "adam", and the output for how well the NN performs is accuracy. 
+
+**12: Fit this model on the training data (10 epochs) and compare it to the previous models.**
+```{r}
+cnn %>% fit(x = mnist$train$x, y = mnist$train$y, epochs = 10, validation_split = 0.2, verbose = 1)
+```
+
+The accuracy of the CNN is 98.18%. This is higher than all of the previous neural networks that we have created. It surpasses the deep feed-forward neural network, which had an out-of-sample accuracy of 97.38%. (The number here may be different to the output because running it again changes the accuracy)
+
+**13: Create another CNN which has better validation performance within 10 epochs. Compare your validation accuracy to that of your peers.**
+
+Here are some things you could do:
+
+* Reduce the convolution filter size & the pooling size and add a second convolution & pooling layer with double the number of filters
+* Add a dropout layer after the flatten layer
+* Look up on the internet what works well and implement it!
+```{r}
+cnn2 <- 
+  keras_model_sequential(input_shape = c(28, 28, 1)) %>% 
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), padding = "same", activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), padding = "same", activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), padding = "same", activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_flatten() %>% 
+  layer_dense(units = 32, activation = "relu") %>% 
+  layer_dense(10, activation = "softmax")
+
+cnn2 %>% 
+  compile(
+    loss = "sparse_categorical_crossentropy",
+    optimizer = "adam", 
+    metrics = c("accuracy")
+  )
+
+summary(cnn2)
+```
+
+Running the model to see if the validation accuracy improved using the above specifications.
+```{r}
+cnn2 %>% fit(x = mnist$train$x, y = mnist$train$y, epochs = 10, validation_split = 0.2, verbose = 1)
+```
+
+With the new specifications, the validation accuracy is 99.05%, which exceed any of the previous neural networks that were created. The closest was the previous CNN with an accuracy of 98.18%. (The number here may be different to the output because running it again changes the accuracy)
+
+-----
+
+# End of document
+
+-----
+
+```{r}
+sessionInfo()
+```
+
