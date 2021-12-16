@@ -313,29 +313,33 @@ predict_ffnn &lt;- class_predict(feedfor, mnist$test$x)
 (ctab_multinom &lt;- table(pred = predict_multinom, true = mnist$test$y))</code></pre>
 <pre><code>##     true
 ## pred    0    1    2    3    4    5    6    7    8    9
-##    0  960    0    5    3    1   12   13    1   11   11
-##    1    0 1117   12    0    2    3    3    6   13    7
-##    2    0    3  930   21    7    3    5   22    7    1
-##    3    2    2   15  929    2   38    1    8   34   13
-##    4    0    0    8    0  919    8    7    5    9   30
-##    5    6    1    3   20    0  776    8    0   29    9
-##    6    8    4   13    3   11   18  919    0   10    0
-##    7    3    2   10   12    6    7    1  961   11   32
-##    8    1    6   34   17    9   22    1    2  841    2
-##    9    0    0    2    5   25    5    0   23    9  904</code></pre>
+##    0  959    0    3    3    1    7    7    1    7   11
+##    1    0 1112    9    0    2    2    3    6    6    7
+##    2    0    3  925   19    7    2    9   26    7    1
+##    3    1    2   15  904    1   29    0    3   14   11
+##    4    0    0    8    0  922    8    7    8    7   32
+##    5    6    1    5   30    0  774    9    0   17    5
+##    6   10    4   13    3    9   18  917    0    9    0
+##    7    3    2    8   13    5    9    2  957   12   31
+##    8    1   11   43   30   10   38    4    3  889    8
+##    9    0    0    3    8   25    5    0   24    6  903</code></pre>
 <pre class="r"><code>(ctab_ffnn &lt;- table(pred = predict_ffnn, true = mnist$test$y))</code></pre>
 <pre><code>##     true
 ## pred    0    1    2    3    4    5    6    7    8    9
-##    0  963    0    1    1    0    2    3    0    3    2
-##    1    0 1119    0    0    0    2    3    3    0    3
-##    2    4    6 1017    5    2    0    1   15   11    1
-##    3    1    1    1  985    0   13    1    2    5    3
-##    4    1    0    2    3  958    3    7    0    7    9
-##    5    2    0    0    2    0  854    6    1    3    1
-##    6    2    2    2    0    6    8  934    0    4    0
-##    7    1    0    7    5    0    0    0  998    4    6
-##    8    1    6    2    5    2    8    3    1  927    2
-##    9    5    1    0    4   14    2    0    8   10  982</code></pre>
+##    0  970    0    6    0    3    2    6    2   12    3
+##    1    1 1123    0    0    1    0    3    6    1    5
+##    2    1    4 1006    2    3    0    1    8    3    1
+##    3    1    1    4  981    0    5    0    6    4    4
+##    4    1    0    0    1  943    0    2    0    4    4
+##    5    2    1    0   16    2  871    3    0    8   10
+##    6    2    3    2    1    9    6  942    0    5    0
+##    7    0    0    4    3    4    1    0  994    4    3
+##    8    1    3    9    4    2    6    1    5  929    2
+##    9    1    0    1    2   15    1    0    7    4  977</code></pre>
+<pre class="r"><code>sum(diag(ctab_multinom)) / sum(ctab_multinom)</code></pre>
+<pre><code>## [1] 0.9262</code></pre>
+<pre class="r"><code>sum(diag(ctab_ffnn)) / sum(ctab_ffnn)</code></pre>
+<pre><code>## [1] 0.9736</code></pre>
 <p>In this multinomial model, it is evident that there are more on the off-diagonal (which indicates misclassifications).</p>
 <p><strong>9 (Optional): If you have time, create and estimate (10 epochs) a deep feed-forward model with the following properties. Compare this model to the previous models on the test data.</strong></p>
 <ul>
@@ -430,9 +434,26 @@ summary(cnn)</code></pre>
 ## Trainable params: 7,430
 ## Non-trainable params: 0
 ## ________________________________________________________________________________</code></pre>
-<p>The first layer is a convolution layer with 6 filters. The second layer is a pooling layer with a size of 4x4. The input will be flatten (matrix to a vector). The first hidden layer has 32 hidden units using the ReLU activation function. The second hidden layer has 10 hidden units and the softmax activation function. For loss, we will be using cross entropy, the optimizer is “adam”, and the output for how well the NN performs is accuracy.</p>
+<p>First, we have the input layer which gets the images and the first channel (28, 28, 1) then, there is a 2d convolution layer with 6 filters, and a kernel size of 5 (in each direction) then, we max-pool the resulting 6 maps to reduce their size by 4 in each direction afterwards, we flatten then comes a dense hidden layer with 32 units and a relu activation function lastly, the output layer is the same as before.</p>
 <p><strong>12: Fit this model on the training data (10 epochs) and compare it to the previous models.</strong></p>
-<pre class="r"><code>cnn %&gt;% fit(x = mnist$train$x, y = mnist$train$y, epochs = 10, validation_split = 0.2, verbose = 1)</code></pre>
+<pre class="r"><code>cnn %&gt;% fit(x = mnist$train$x, y = mnist$train$y, epochs = 10, validation_split = 0.2, verbose = 1)
+
+pred_cnn &lt;- class_predict(cnn, x = mnist$test$x)
+(ctab_cnn &lt;- table(pred = pred_cnn, true = mnist$test$y))</code></pre>
+<pre><code>##     true
+## pred    0    1    2    3    4    5    6    7    8    9
+##    0  976    0    0    1    1    1    6    0    7    1
+##    1    0 1129    3    0    1    0    4    3    2    1
+##    2    1    1 1022    3    3    0    6   17    5    3
+##    3    0    4    4 1003    0   14    0    5   11    3
+##    4    0    0    0    0  958    0    1    0    0    2
+##    5    0    0    0    0    0  863    1    1    1    3
+##    6    2    0    0    0    2    2  934    0    1    0
+##    7    1    0    2    0    1    1    0  994    0    3
+##    8    0    1    1    3    3    9    5    1  943    1
+##    9    0    0    0    0   13    2    1    7    4  992</code></pre>
+<pre class="r"><code>sum(diag(ctab_cnn)) / sum(ctab_cnn)</code></pre>
+<pre><code>## [1] 0.9814</code></pre>
 <p>The accuracy of the CNN is 98.18%. This is higher than all of the previous neural networks that we have created. It surpasses the deep feed-forward neural network, which had an out-of-sample accuracy of 97.38%. (The number here may be different to the output because running it again changes the accuracy)</p>
 <p><strong>13: Create another CNN which has better validation performance within 10 epochs. Compare your validation accuracy to that of your peers.</strong></p>
 <p>Here are some things you could do:</p>
@@ -489,7 +510,24 @@ summary(cnn2)</code></pre>
 ## Non-trainable params: 0
 ## ________________________________________________________________________________</code></pre>
 <p>Running the model to see if the validation accuracy improved using the above specifications.</p>
-<pre class="r"><code>cnn2 %&gt;% fit(x = mnist$train$x, y = mnist$train$y, epochs = 10, validation_split = 0.2, verbose = 1)</code></pre>
+<pre class="r"><code>cnn2 %&gt;% fit(x = mnist$train$x, y = mnist$train$y, epochs = 10, validation_split = 0.2, verbose = 1)
+
+pred_cnn_2 &lt;- class_predict(cnn2, x = mnist$test$x)
+(ctab_cnn_2 &lt;- table(pred = pred_cnn_2, true = mnist$test$y))</code></pre>
+<pre><code>##     true
+## pred    0    1    2    3    4    5    6    7    8    9
+##    0  979    0    1    0    0    1    3    0    1    1
+##    1    0 1131    1    0    3    0    1    2    2    0
+##    2    0    0 1020    0    0    0    1    1    0    2
+##    3    1    1    3 1008    0    8    1    2    6    0
+##    4    0    0    0    0  957    0    2    0    0    3
+##    5    0    0    0    2    0  881    2    0    1    5
+##    6    0    0    0    0    0    1  947    0    1    0
+##    7    0    3    7    0   10    1    0 1021    0    4
+##    8    0    0    0    0    3    0    1    0  962    0
+##    9    0    0    0    0    9    0    0    2    1  994</code></pre>
+<pre class="r"><code>sum(diag(ctab_cnn_2)) / sum(ctab_cnn_2)</code></pre>
+<pre><code>## [1] 0.99</code></pre>
 <p>With the new specifications, the validation accuracy is 99.05%, which exceed any of the previous neural networks that were created. The closest was the previous CNN with an accuracy of 98.18%. (The number here may be different to the output because running it again changes the accuracy)</p>
 <hr />
 </div>
@@ -519,23 +557,23 @@ summary(cnn2)</code></pre>
 ##  [9] ggplot2_3.3.5   tidyverse_1.3.1
 ## 
 ## loaded via a namespace (and not attached):
-##  [1] Rcpp_1.0.7       lubridate_1.7.10 lattice_0.20-44  png_0.1-7       
-##  [5] assertthat_0.2.1 zeallot_0.1.0    digest_0.6.27    utf8_1.2.2      
-##  [9] R6_2.5.1         cellranger_1.1.0 backports_1.3.0  reprex_2.0.1    
-## [13] evaluate_0.14    highr_0.9        httr_1.4.2       pillar_1.6.4    
-## [17] tfruns_1.5.0     rlang_0.4.11     readxl_1.3.1     rstudioapi_0.13 
-## [21] whisker_0.4      jquerylib_0.1.4  Matrix_1.3-4     reticulate_1.22 
-## [25] rmarkdown_2.11   munsell_0.5.0    broom_0.7.9      compiler_4.1.1  
-## [29] modelr_0.1.8     xfun_0.25        base64enc_0.1-3  pkgconfig_2.0.3 
-## [33] tensorflow_2.7.0 htmltools_0.5.2  tidyselect_1.1.1 fansi_0.5.0     
-## [37] crayon_1.4.2     tzdb_0.1.2       dbplyr_2.1.1     withr_2.4.2     
-## [41] grid_4.1.1       jsonlite_1.7.2   gtable_0.3.0     lifecycle_1.0.1 
-## [45] DBI_1.1.1        magrittr_2.0.1   scales_1.1.1     cli_3.0.1       
-## [49] stringi_1.7.5    fs_1.5.0         xml2_1.3.2       bslib_0.3.1     
-## [53] ellipsis_0.3.2   generics_0.1.1   vctrs_0.3.8      tools_4.1.1     
-## [57] glue_1.4.2       hms_1.1.0        fastmap_1.1.0    yaml_2.2.1      
-## [61] colorspace_2.0-2 rvest_1.0.1      knitr_1.36       haven_2.4.3     
-## [65] sass_0.4.0</code></pre>
+##  [1] Rcpp_1.0.7       here_1.0.1       lubridate_1.7.10 lattice_0.20-44 
+##  [5] png_0.1-7        rprojroot_2.0.2  assertthat_0.2.1 zeallot_0.1.0   
+##  [9] digest_0.6.27    utf8_1.2.2       R6_2.5.1         cellranger_1.1.0
+## [13] backports_1.3.0  reprex_2.0.1     evaluate_0.14    highr_0.9       
+## [17] httr_1.4.2       pillar_1.6.4     tfruns_1.5.0     rlang_0.4.11    
+## [21] readxl_1.3.1     rstudioapi_0.13  whisker_0.4      jquerylib_0.1.4 
+## [25] Matrix_1.3-4     reticulate_1.22  rmarkdown_2.11   munsell_0.5.0   
+## [29] broom_0.7.9      compiler_4.1.1   modelr_0.1.8     xfun_0.25       
+## [33] base64enc_0.1-3  pkgconfig_2.0.3  tensorflow_2.7.0 htmltools_0.5.2 
+## [37] tidyselect_1.1.1 fansi_0.5.0      crayon_1.4.2     tzdb_0.1.2      
+## [41] dbplyr_2.1.1     withr_2.4.2      rappdirs_0.3.3   grid_4.1.1      
+## [45] jsonlite_1.7.2   gtable_0.3.0     lifecycle_1.0.1  DBI_1.1.1       
+## [49] magrittr_2.0.1   scales_1.1.1     cli_3.0.1        stringi_1.7.5   
+## [53] fs_1.5.0         xml2_1.3.2       bslib_0.3.1      ellipsis_0.3.2  
+## [57] generics_0.1.1   vctrs_0.3.8      tools_4.1.1      glue_1.4.2      
+## [61] hms_1.1.0        fastmap_1.1.0    yaml_2.2.1       colorspace_2.0-2
+## [65] rvest_1.0.1      knitr_1.36       haven_2.4.3      sass_0.4.0</code></pre>
 </div>
 
 
