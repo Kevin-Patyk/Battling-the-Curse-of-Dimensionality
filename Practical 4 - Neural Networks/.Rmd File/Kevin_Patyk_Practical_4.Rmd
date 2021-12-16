@@ -144,6 +144,12 @@ predict_ffnn <- class_predict(feedfor, mnist$test$x)
 (ctab_ffnn <- table(pred = predict_ffnn, true = mnist$test$y))
 ```
 
+```{r}
+sum(diag(ctab_multinom)) / sum(ctab_multinom)
+sum(diag(ctab_ffnn)) / sum(ctab_ffnn)
+```
+
+
 In this multinomial model, it is evident that there are more on the off-diagonal (which indicates misclassifications). 
 
 **9 (Optional): If you have time, create and estimate (10 epochs) a deep feed-forward model with the following properties. Compare this model to the previous models on the test data.**
@@ -215,11 +221,17 @@ cnn %>%
 summary(cnn)
 ```
 
-The first layer is a convolution layer with 6 filters. The second layer is a pooling layer with a size of 4x4. The input will be flatten (matrix to a vector). The first hidden layer has 32 hidden units using the ReLU activation function. The second hidden layer has 10 hidden units and the softmax activation function. For loss, we will be using cross entropy, the optimizer is "adam", and the output for how well the NN performs is accuracy. 
+First, we have the input layer which gets the images and the first channel (28, 28, 1)
+then, there is a 2d convolution layer with 6 filters, and a kernel size of 5 (in each direction) then, we max-pool the resulting 6 maps to reduce their size by 4 in each direction afterwards, we flatten then comes a dense hidden layer with 32 units and a relu activation function lastly, the output layer is the same as before.
 
 **12: Fit this model on the training data (10 epochs) and compare it to the previous models.**
 ```{r}
 cnn %>% fit(x = mnist$train$x, y = mnist$train$y, epochs = 10, validation_split = 0.2, verbose = 1)
+
+pred_cnn <- class_predict(cnn, x = mnist$test$x)
+(ctab_cnn <- table(pred = pred_cnn, true = mnist$test$y))
+
+sum(diag(ctab_cnn)) / sum(ctab_cnn)
 ```
 
 The accuracy of the CNN is 98.18%. This is higher than all of the previous neural networks that we have created. It surpasses the deep feed-forward neural network, which had an out-of-sample accuracy of 97.38%. (The number here may be different to the output because running it again changes the accuracy)
@@ -257,6 +269,10 @@ summary(cnn2)
 Running the model to see if the validation accuracy improved using the above specifications.
 ```{r}
 cnn2 %>% fit(x = mnist$train$x, y = mnist$train$y, epochs = 10, validation_split = 0.2, verbose = 1)
+
+pred_cnn_2 <- class_predict(cnn2, x = mnist$test$x)
+(ctab_cnn_2 <- table(pred = pred_cnn_2, true = mnist$test$y))
+sum(diag(ctab_cnn_2)) / sum(ctab_cnn_2)
 ```
 
 With the new specifications, the validation accuracy is 99.05%, which exceed any of the previous neural networks that were created. The closest was the previous CNN with an accuracy of 98.18%. (The number here may be different to the output because running it again changes the accuracy)
