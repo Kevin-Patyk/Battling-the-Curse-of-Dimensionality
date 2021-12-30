@@ -1,6 +1,6 @@
 # Battling the Curse of Dimensionality
 
-This repository is where I store all of my R scripts and HTML files from practicals and assignments for this course at Utrecht University.
+This repository is where I store all of my `R` scripts and HTML files from practicals and assignments for this course at Utrecht University.
 
 # Course Description
 
@@ -21,4 +21,4 @@ At the end of this course, students are able to apply and interpret the theories
 * Motivate and explain the choice for techniques to investigate data problems.
 * Interpret and evaluate the results of (high-dimensional) data analyses and explain these techniques in * Simple terminology to a broad audience.
 * Understand and explain the principles of high-dimensional data analysis and visualization.
-* Construct appropriate visualizations for each data analysis technique in R.
+* Construct appropriate visualizations for each data analysis technique in `R`.
