@@ -2,6 +2,10 @@
 
 This repository is where I store all of my `R` scripts and HTML files from practicals and assignments for this course at Utrecht University.
 
+# Contents
+
+Each folder contains an `.Rmd` file and a corresponding `R Markdown` HTML file. If there are any images or data associated with the code, they will be in the `Data` and `Images` folders. 
+
 # Course Description
 
 The ever-growing influx of data allows us to develop, interpret and apply an increasing set of learning techniques. However, with this increase in data comes a challenge: how to make sense of the data and identify the components that really matter in our modeling efforts. This course gives a detailed and modern overview of statistical learning with a specific focus on high-dimensional data.
