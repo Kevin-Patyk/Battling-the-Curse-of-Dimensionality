@@ -1,0 +1,222 @@
+---
+title: "Practical 6"
+author: "Kevin Patyk"
+date: "12/24/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
+```
+
+# Introduction
+
+In this practical, we will apply model-based clustering on a data set of bank note measurements.
+
+We use the following packages:
+```{r message=FALSE, warning=FALSE}
+library(mclust)
+library(tidyverse)
+library(patchwork)
+```
+
+The data is built into the `mclust` package and can be loaded as a `tibble` by running the following code:
+```{r}
+df <- as_tibble(banknote)
+```
+
+-----
+
+# Data exploration
+
+**1: Read the help file of the banknote data set to understand what it’s all about.**
+```{r eval=FALSE}
+?banknote
+```
+
+The data set contains six measurements made on 100 genuine and 100 counterfeit old-Swiss 1000-franc bank notes. The data contains 7 variables: Status (genuine vs counterfeit), Length (length of bill in mm), Left (width of left edge in mm), Right (width of ridge edge in mm), Bottom (bottom margin width in mm), Top (top marging width in mm), and Diagonal (length of diagonal in mm). 
+
+**2: Create a scatter plot of the `Left` (x-axis) and `Right` (y-axis) measurements on the data set. Map the `Status` column to `colour`. `Jitter` the points to avoid overplotting. Are the classes easy to distinguish based on these features?**
+```{r}
+df %>%
+  ggplot(aes(x = Left, y = Right)) +
+  geom_jitter(aes(color = Status))
+```
+
+There seems to be some separation among the classes based on these features, but it is not very distinct. There is a lot of overlap between the 2 classes.
+
+**3: From now on, we will assume that we don’t have the labels. Remove the `Status` column from the data set.**
+```{r}
+df <- df %>%
+  select(-Status)
+```
+
+**4: Create density plots for all columns in the data set. Which single feature is likely to be best for clustering?**
+```{r}
+stor <- list()
+for(i in colnames(df)){
+  stor[[i]] <- ggplot(df, aes_string(x = i)) +
+    geom_density() +
+    ggtitle(paste("Density for", i, sep = " "))
+}
+
+stor$Length + stor$Left + stor$Right + stor$Bottom + stor$Top + stor$Diagonal 
+```
+
+The single feature that would be best for clustering is `Diagonal`. This is because there are 2 bumps and they are quite separated.
+
+An alternative way of plotting several densities, as provided by the professor, is:
+```{r}
+#load the library
+library(ggridges)
+
+#plot
+df %>% 
+  mutate_all(scale) %>% 
+  pivot_longer(everything(), names_to = "feature", values_to = "value") %>% 
+  ggplot(aes(x = value, y = feature, fill = feature)) + 
+  geom_density_ridges() +
+  scale_fill_viridis_d(guide = FALSE) +
+  theme_minimal()
+```
+
+-----
+
+# Univariate model-based clustering
+
+**5: Use `Mclust` to perform model-based clustering with 2 clusters on the feature you chose. Assume equal variances. Name the model object `fit_E_2`. What are the means and variances of the clusters?**
+```{r}
+#making the model - could also use pull(Diagonal) here rather than what is written
+fit_E_2 <- Mclust(data = df[, "Diagonal"], G = 2, modelNames = "E")
+
+#obtaining the means and variances
+fit_E_2$parameters$mean
+fit_E_2$parameters$variance$sigmasq
+```
+
+**7: Use the formula from the slides and the model’s log-likelihood (`fit_E_2$loglik`) to compute the BIC for this model. Compare it to the BIC stored in the model object (`fit_E_2$bic`). Explain how many parameters (`m`) you used and which parameters these are.**
+
+The BIC can be used to compare different models for the same data. The formula for the BIC is:
+
+$$ BIC = -2\ell(\theta) + k\log n $$
+```{r}
+#calculating bic myself
+(bic_mine <- -2*fit_E_2$loglik + 4*log(nrow(df)))
+
+#model bic
+(bic_mod <- fit_E_2$bic)
+```
+
+My BIC is the same as the output by the model. These parameters are: 2 means, 1 covariance-variance matrix, and 1 probability ($\pi$). The probability is only parameter since we only need to estimate 1 probability to know the other. We can just count the number of models from the output of `fit_E_2$parameters`. 
+
+The BIC from the model is negative, the professor does not know why the package does this, but otherwise the values are exactly the same. 
+
+**7: Plot the model-implied density using the plot() function. Afterwards, add rug marks of the original data to the plot using the rug() function from the base graphics system.**
+```{r message=FALSE, warning=FALSE}
+#plotting the model-implied density with rug marks
+plot(fit_E_2, what = "density", xlab = "Diagonal Measurement")
+rug(df$Diagonal)
+```
+
+**8: Use `Mclust` to perform model-based clustering with 2 clusters on this feature again, but now assume unequal variances. Name the model object `fit_V_2`. What are the means and variances of the clusters? Plot the density again and note the differences.**
+```{r message=FALSE, warning=FALSE}
+#making the model with unequal variances
+fit_V_2 <- Mclust(data = df[, "Diagonal"], G = 2, modelNames = "V")
+
+#checking the means and variances of the clusters
+fit_V_2$parameters$mean
+fit_V_2$parameters$variance$sigmasq
+
+#plotting the model-implied density with rug marks
+plot(fit_V_2, what = "density", xlab = "Diagonal Measurement")
+rug(df$Diagonal)
+```
+
+The density plot for `fit_E_2` is completely even in terms of hump size, whereas the density plot for `fit_V_2` has humps that are not of equal size. The left cluster has a larger variance.
+
+**9: How many parameters does this model have? Name them.**
+
+This model, `fit_V_2` has 5 parameters: 2 means, 1 probability ($\pi$), and 2 variance-covariance matrices.
+
+**10: According to the deviance, which model fits better?**
+
+The formula for deviance is:
+
+$$ Deviance = -2\ell(\theta) $$
+```{r}
+#deviance for model 1
+-2*fit_E_2$loglik
+
+#deviance for model 2
+-2*fit_V_2$loglik
+```
+
+Since lower deviance indicates a better model fit, the model with unequal variances (`fit_V_2`) fits better.
+
+**11: According to the BIC, which model is better?**
+```{r}
+#bic for model 1
+fit_E_2$bic
+
+#bic for model 2
+fit_V_2$bic
+```
+
+According to the BIC, the model with unequal variances (`fit_V_2`) fits better. Although the mode stores the BICs as negative, we just look for the lower BIC rather than the bigger BIC. If you wanted the positive values, we could just do (`-(fit_E_2$bic)` and `-(fit_V_2$bic)`).
+
+-----
+
+# Multivariate model-based clustering
+
+We will now use all available information in the data set to cluster the observations.
+
+**12: Use `Mclust` with all 6 features to perform clustering. Allow all model types (shapes), and from 1 to 9 potential clusters. What is the optimal model based on the BIC?**
+```{r}
+#making the model with all of the features
+fit_A_2 <- Mclust(data = df, G = 1:9, modelNames = mclust.options("emModelNames"))
+
+#checking the optimal model based on the bic 
+summary(fit_A_2)
+```
+
+The optimal model based on the BIC is VVE with 3 clusters. 
+
+**13: How many mean parameters does this model have?**
+```{r}
+fit_A_2$parameters$mean
+```
+
+This model will have 18 means. This is because each distribution has a vector of 6 means and there are 3 clusters, so $3\cdot6 = 18$. As a note, the means are always different. The `modelNames = ` part is only about the covariance matrix. 
+
+**14: Run a 2-component VVV model on this data. Create a matrix of bivariate contour (“density”) plots using the `plot()` function. Which features provide good component separation? Which do not?**
+```{r message=FALSE, warning=FALSE, fig.height= 8, fig.width=8}
+#making the model with the specified arguments
+fit_B_2 <- Mclust(data = df, G = 2, modelNames = "VVV")
+
+#making a matrix of bivariate density plots
+plot(fit_B_2, "density")
+```
+
+The features that provide good component separation are `Diagonal`-`Top` and `Diagonal`-`Bottom`. 
+
+**15: Create a scatter plot just like the first scatter plot in this tutorial, but map the estimated class assignments to the `colour` aesthetic. Map the uncertainty (part of the fitted model list) to the `size` aesthetic, such that larger points indicate more uncertain class assignments. `Jitter` the points to avoid overplotting. What do you notice about the uncertainty?**
+```{r}
+cbind(df, "class" = fit_B_2$classification, "uncert" = fit_B_2$uncertainty) %>%
+  ggplot(aes(x = Diagonal, y = Top)) +
+  geom_jitter(aes(color = as.factor(class), size = uncert))
+```
+
+The uncertainty seems to be high in the first group, whereas it seems to be more stable in the second group. 
+
+Only 3 points are slightly uncertain, and they are not around the border of the classes in these two dimensions. The other dimensions give enough information about those points near the border.
+
+-----
+
+# End of document
+
+-----
+
+```{r}
+sessionInfo()
+```
+
