@@ -1,0 +1,228 @@
+---
+title: "Clustering Assignment"
+author: "Kevin Patyk, Michael Koch, & Sander van Gestel"
+date: "1/14/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
+```
+
+# Introduction
+
+For this clustering assignment, the data set that we chose was the [wine data set](https://archive.ics.uci.edu/ml/datasets/wine) from the [UCI Machine Learning Repository](https://archive.ics.uci.edu/ml/index.php). 
+
+These data are the results of a chemical analysis of wines grown in the same region in Italy but derived from three different cultivars. The analysis determined the quantities of 13 constituents found in each of the three types of wines. 
+
+The data set was collected by Forina, M. et al (1988) and chemical analysis was used to determine the origin of wines grown in the same region but derived from 3 different cultivars. The features consist of the chemical composition of 3 different types of wines.  
+
+-----
+
+# Loading the required packages.
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(mclust)
+library(patchwork)
+library(fpc)
+```
+
+-----
+
+# Data import and pre-processing
+
+Importing the data.
+```{r}
+df <- read.csv(file = "wine-clustering.csv")
+```
+
+Getting the dimensions of the data.
+```{r}
+dim(df)
+```
+
+Getting the structure of the data.
+```{r}
+str(df)
+```
+
+Checking for missingness.
+```{r}
+any(is.na(df))
+```
+
+Getting the variable names.
+```{r}
+colnames(df)
+```
+
+The data set has 13 features which consist of variables that are all continuous. There are 178 observations and there are no missing values. All of the variables are measured on different scales, so the data set should be standardized. 
+
+-----
+
+# Pre-processing
+
+As mentioned before, all of the variables are measured on different scales, so the data set should be standardized. This will be by subtracting the mean and dividing by the standard deviation. 
+
+$$ Z = \frac{x-\mu}{\sigma}$$
+
+Standardizing the data.
+```{r}
+df_s <- df %>%
+  scale() %>%
+  as.data.frame()
+```
+
+Saving the file as an `.RDS` file.
+```{r}
+saveRDS(object = df_s, file = "processed_wine.RDS")
+```
+
+Leaving the option to load the file.
+```{r}
+df_proc <- readRDS("processed_wine.RDS")
+```
+
+------
+
+# Data visualization and exploration 
+
+Creating density plots.
+```{r fig.height= 8, fig.width=8}
+stor <- list()
+for(i in colnames(df_proc)){
+  stor[[i]] <- ggplot(df_proc, aes_string(x = i)) +
+    geom_density() +
+    ggtitle(paste("Density for", i, sep = " "))
+}
+
+stor$Alcohol + stor$Malic_Acid + stor$Ash + stor$Ash_Alcanity + stor$Magnesium + stor$Total_Phenols + stor$Flavanoids + stor$Nonflavanoid_Phenols + stor$Proanthocyanins + stor$Color_Intensity + stor$Hue + stor$OD280 + stor$Proline
+```
+
+Creating a scatterplot matrix.
+```{r fig.height= 8, fig.width=8}
+pairs(df_proc, lower.panel = NULL)
+```
+
+-----
+
+# K-means clustering
+
+We chose k-means clustering as the first method because we wanted to compare an algorithm-based clustering approach to a model-based clustering approach. It will later be compared to Gaussian mixture modeling. 
+
+K-means clustering is a top-down approach which aims to minimize the variance within clusters and maximize the variance between clusters. 
+
+Running k-means clustering on various cluster numbers. 
+```{r}
+#2 clusters
+k2 <- kmeans(x = df_proc, centers = 2)
+#3 clusters
+k3 <- kmeans(x = df_proc, centers = 3)
+#4 clusters
+k4 <- kmeans(x = df_proc, centers = 4)
+#5 clusters
+k5 <- kmeans(x = df_proc, centers = 5)
+#6 clusters 
+k6 <- kmeans(x = df_proc, centers = 6)
+```
+
+Performing the bootstrap stability assessment for the cluster solutions. 
+```{r results='hide'}
+#bootstrapping for 2 clusters
+boot_2 <- clusterboot(data = df_proc, B = 100, bootmethod = "boot", seed = 123, clustermethod = kmeansCBI, k = 2)
+#bootstrapping for 3 clusters
+boot_3 <- clusterboot(data = df_proc, B = 100, bootmethod = "boot", seed = 123, clustermethod = kmeansCBI, k = 3)
+#bootstrapping for 4 clusters
+boot_4 <- clusterboot(data = df_proc, B = 100, bootmethod = "boot", seed = 123, clustermethod = kmeansCBI, k = 4)
+#bootstrapping for 5 clusters
+boot_5 <- clusterboot(data = df_proc, B = 100, bootmethod = "boot", seed = 123, clustermethod = kmeansCBI, k = 5)
+#bootstrapping for 6 clusters
+boot_6 <- clusterboot(data = df_proc, B = 100, bootmethod = "boot", seed = 123, clustermethod = kmeansCBI, k = 6)
+```
+
+Obtaining the bootstrap means. 
+```{r}
+#2 clusters
+boot_2$bootmean
+#3 clusters
+boot_3$bootmean
+#4 clusters
+boot_4$bootmean
+#5 clusters
+boot_5$bootmean
+#6 clusters 
+boot_6$bootmean
+```
+
+According the above output, the 3 cluster bootstrap has the highest similarity and stability between all of the clusters. Thus, using k-means clustering, we would select 3 clusters. 
+
+-----
+
+# Gaussian mixture model clustering
+
+We chose GMM as the second method because we wanted to compare an algorithm-based clustering approach to a model-based clustering approach. This will be compared to k-means clustering. 
+
+GMM clustering is a model-based procedure which uses maximum likelihood estimation to determine the number of clusters. It is a flexible approach which allows for parameter specification regarding cluster size, shape, and orientation. 
+
+Creating a multivariate GMM model with all of the features to perform clustering.
+```{r}
+fit_gmm <- Mclust(data = df_proc, G = 2:6, modelNames = mclust.options("emModelNames"))
+```
+
+Examining the output of the model to determine the best fit.
+```{r}
+summary(fit_gmm)
+```
+
+According to the output above, the best model in terms of the BIC is a VVE model (has variable volume and shape but equal orientation) model with 3 clusters. 
+
+Creating density plots to obtain the features which provide the best cluster separation. 
+```{r fig.height= 8, fig.width=8}
+#making a matrix of bivariate density plots
+plot(fit_gmm, "density")
+```
+
+The features which provide the best cluster separation are `Proline`- `Color_Intensity`. 
+
+----- 
+
+# Comparing the methods
+
+For this particular data set, they did provide the number of instances per cluster. Although this would not be done in practice (since we typically do not have the output as this is an supervised technique), it will be done here just to compare methods more objectively to one another. 
+
+The instances per cluster are as follows:
+
+* Cluster 1. 59
+* Cluster 2: 71
+* Cluster 3: 48
+
+obtaining the predicted clusters for each observation using k-means. 
+```{r}
+#k means clustering
+table(k3$cluster)
+#gmm clustering
+table(fit_gmm$classification)
+```
+
+The GMM clustering is more accurate than the k-means clustering when comparing it to the true outcomes. 
+
+----- 
+
+# Conclusion
+
+In this document, we used the wine data set to compare k-means clustering, which is an algorithm-based approach, to GMM, which is a model-based approach. Both methods were implemented and both concluded that there were 3 clusters. Since the true number of instances per cluster were provided, the cluster assignments from the 2 approaches were compared to the true output. In the end, GMM clustering outperformed k-means clustering.
+
+The strengths of k-means are: it is relatively easy to understand, it is easy to implement, and you do not have to make assumptions about the underlying  distributions of the clusters. On the other hand, k-means is rule driven, meaning the rule can be not applicable to certain situations, not all data work well with some rules, there are situations where the rule can fail, and it might be hard to ascertain the implications if we wanted to change the rule. Additionally, the algorithm being initialized randomly can provide varying results (they will not be the same every single time), it makes clusters circular when this may not be the case, and it does reflect the uncertainty of cluster membership. 
+
+The strengths of GMM are: assumptions about the clusters are explicit, not implicit, clusters can have varying parameters regarding size, shape, and orientation, it provides a posterior probability of an observation belonging to each cluster, thus reflecting that cluster membership is uncertain, and it is a more flexible, complex model. On the other hand, we have to assume that data within each cluster is multivariately normally distributed, which may not be the case, and it is more difficult to understand. 
+
+-----
+
+# End of document
+
+-----
+
+```{r}
+sessionInfo()
+```
+
