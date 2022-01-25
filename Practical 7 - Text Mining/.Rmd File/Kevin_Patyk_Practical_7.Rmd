@@ -1,0 +1,323 @@
+---
+title: "Practical 7"
+author: "Kevin Patyk"
+date: "1/19/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+In this practical, we are going to use the following packages to create document-term matrices on BBC news data set and apply LDA topic modeling.
+
+```{r warning=FALSE, message=FALSE}
+library(tidyverse)
+library(tidytext)
+library(tm)
+library(e1071)
+library(topicmodels)
+library(stringi)
+```
+
+-----
+
+# Vector space model: document-term matrix
+
+The data set used in this practical is the BBC News data set. You can use the provided `news_dataset.rda` for this purpose. 
+
+This data set consists of 2225 documents from the BBC news website corresponding to stories in five topical areas from 2004 to 2005. These areas are:
+
+* Business
+* Entertainment
+* Politics
+* Sport
+* Tech
+
+**1: Use the code below to load the data set and inspect its first rows.**
+```{r}
+load("news_dataset.rda")
+head(df_final)
+```
+
+**2: Find out about the name of the categories and the number of observations in each of them.**
+```{r}
+table(df_final$Category)
+```
+
+There are 5 categories: business, entertainment, politics, sport, and tech. The number of observations per category, in order, are: 510, 386, 417, 511, and 401.
+
+**3: Convert the data set into a document-term matrix and use the findFreqTerms function to keep the terms which their frequency is higher than 10. It is also a good idea to apply some text preprocessing before this conversion: e.g., remove non-UTF-8 characters, convert the words into lowercase, remove punctuation, numbers, stopwords, and whitespaces.**
+```{r warning=FALSE}
+## set the seed to make your partition reproducible
+set.seed(123)
+
+docs <- Corpus(VectorSource(df_final$Content))
+
+# we can create the dtm matrix in on-go or with separate functions as below
+# dtm <- DocumentTermMatrix(docs,
+#            control = list(tolower = TRUE,
+#                           removeNumbers = TRUE,
+#                           removePunctuation = TRUE,
+#                           stopwords = TRUE
+#                          ))
+
+# remove non-UTF-8 characters
+docs <- tm_map(docs, iconv, from = "UTF-8", to = "UTF-8", sub = '')
+# standardize to lowercase
+docs <- tm_map(docs, content_transformer(tolower))
+# remove tm stopwords
+docs <- tm_map(docs, removeWords, stopwords())
+# standardize whitespaces
+docs <- tm_map(docs, stripWhitespace)
+# remove punctuation
+docs <- tm_map(docs, removePunctuation)
+# remove numbers
+docs <- tm_map(docs, removeNumbers)
+
+dtm <- DocumentTermMatrix(docs)
+
+# words appearing more than 10x
+features <- findFreqTerms(dtm, 10)
+head(features)
+```
+
+**4: Partition the original data into training and test sets with 80% for training and 20% for test.**
+```{r}
+## 80% of the sample size
+smp_size <- floor(0.80 * nrow(df_final))
+
+set.seed(123)
+train_idx <- sample(seq_len(nrow(df_final)), size = smp_size)
+
+# set for the original raw data 
+train1 <- df_final[train_idx,]
+test1  <- df_final[-train_idx,]
+
+# set for the cleaned-up data
+train2 <- docs[train_idx]
+test2  <- docs[-train_idx]
+```
+
+**5: Create separate document-term matrices for the training and the test sets using the previous frequent terms as the input dictionary and convert them into data frames.**
+```{r}
+dtm_train <- DocumentTermMatrix(train2, list(dictionary = features))
+dtm_test  <- DocumentTermMatrix(test2, list(dictionary = features))
+
+dtm_train <- as.data.frame(as.matrix(dtm_train))
+dtm_test  <- as.data.frame(as.matrix(dtm_test))
+```
+
+**6: Use the `cbind` function to add the categories to the `train_dtm` data and name the column `y`.**
+```{r}
+dtm_train <- cbind(cat = factor(train1$Category), dtm_train)
+dtm_test  <- cbind(cat = factor(test1$Category), dtm_test)
+dtm_train <- as.data.frame(dtm_train)
+dtm_test  <- as.data.frame(dtm_test)
+```
+
+**7: Fit a SVM model with a linear kernel on the training data set. Predict the categories for the training and test data.**
+```{r warning=FALSE}
+fit_svm <- svm(cat ~ ., data = dtm_train)
+summary(fit_svm)
+
+# prediction on training data
+pred_svm_train <- predict(fit_svm, dtm_train)
+fit_svm_table  <- table(dtm_train$cat, pred_svm_train, dnn = c("Actual", "Predicted"))
+fit_svm_table
+
+# prediction on test data
+pred_svm_test <- predict(fit_svm, dtm_test)
+fit_svm_test  <- table(dtm_test$cat, pred_svm_test, dnn = c("Actual", "Predicted"))
+fit_svm_test
+```
+
+
+# Topic modeling
+
+Latent Dirichlet allocation (LDA) is a particularly popular method for fitting a topic model. It treats each document as a mixture of topics, and each topic as a mixture of words. This allows documents to “overlap” each other in terms of content, rather than being separated into discrete groups, in a way that mirrors typical use of natural language.
+
+**8: Use the `LDA` function from the `topicmodels` package to train an LDA model with 5 topics with the Gibbs sampling method.**
+```{r}
+# An LDA topic model with 5 topics; if it takes a lot of time for you run the code with k = 2
+out_lda <- LDA(dtm, k = 5, method= "Gibbs", control = list(seed = 321))
+out_lda
+```
+
+**9: The `tidy()` method is originally from the broom package (Robinson 2017), for tidying model objects. The tidytext package provides this method for extracting the per-topic-per-word probabilities, called “beta”, from the LDA model. Use this function and check the beta probabilities for each term and topic.**
+```{r}
+lda_topics <- tidy(out_lda, matrix = "beta")
+lda_topics
+```
+
+**10: Use the code below to plot the top 20 terms within each topic.**
+```{r}
+lda_top_terms <- lda_topics %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 20) %>% # We use dplyr’s slice_max() to find the top 10 terms within each topic.
+  ungroup() %>%
+  arrange(topic, -beta)
+
+lda_top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered()
+```
+
+**11: Use the code below to save the terms and topics in a wide format.**
+```{r}
+beta_wide <- lda_topics %>%
+  mutate(topic = paste0("topic", topic)) %>%
+  pivot_wider(names_from = topic, values_from = beta) %>% 
+  mutate(log_ratio21 = log2(topic2 / topic1)) %>% 
+  mutate(log_ratio31 = log2(topic3 / topic1))%>% 
+  mutate(log_ratio41 = log2(topic4 / topic1))%>% 
+  mutate(log_ratio51 = log2(topic5 / topic1))
+
+beta_wide
+```
+
+**12: Use the log ratios to visualize the words with the greatest differences between topic 1 and other topics. Below you see this analysis for topics 1 and 2.**
+```{r}
+# topic 1 versus topic 2
+lda_top_terms1 <- beta_wide %>%
+  slice_max(log_ratio21, n = 10) %>%
+  arrange(term, -log_ratio21)
+
+lda_top_terms2 <- beta_wide %>%
+  slice_max(-log_ratio21, n = 10) %>%
+  arrange(term, -log_ratio21)
+
+lda_top_terms12 <- rbind(lda_top_terms1, lda_top_terms2)
+
+# this is for ggplot to understand in which order to plot name on the x axis.
+lda_top_terms12$term <- factor(lda_top_terms12$term, levels = lda_top_terms12$term[order(lda_top_terms12$log_ratio21)])
+
+# Words with the greatest difference in beta between topic 2 and topic 1
+lda_top_terms12 %>%
+  ggplot(aes(log_ratio21, term, fill = (log_ratio21 > 0))) +
+  geom_col(show.legend = FALSE) +
+  scale_y_reordered() +
+  theme_minimal()
+```
+
+```{r}
+# topic 1 versus topic 3
+lda_top_terms1 <- beta_wide %>%
+  slice_max(log_ratio31, n = 10) %>%
+  arrange(term, -log_ratio31)
+
+lda_top_terms2 <- beta_wide %>%
+  slice_max(-log_ratio31, n = 10) %>%
+  arrange(term, -log_ratio31)
+
+lda_top_terms13 <- rbind(lda_top_terms1, lda_top_terms2)
+
+# this is for ggplot to understand in which order to plot name on the x axis.
+lda_top_terms13$term <- factor(lda_top_terms13$term, levels = lda_top_terms13$term[order(lda_top_terms13$log_ratio31)])
+
+# Words with the greatest difference in beta between topic 2 and topic 1
+lda_top_terms13 %>%
+  ggplot(aes(log_ratio31, term, fill = (log_ratio31 > 0))) +
+  geom_col(show.legend = FALSE) +
+  scale_y_reordered() +
+  theme_minimal()
+```
+
+```{r}
+# topic 1 versus topic 4
+lda_top_terms1 <- beta_wide %>%
+  slice_max(log_ratio41, n = 10) %>%
+  arrange(term, -log_ratio41)
+
+lda_top_terms2 <- beta_wide %>%
+  slice_max(-log_ratio41, n = 10) %>%
+  arrange(term, -log_ratio41)
+
+lda_top_terms14 <- rbind(lda_top_terms1, lda_top_terms2)
+
+lda_top_terms14[1,]$term <- 'SPELLING ERROR!'
+
+# this is for ggplot to understand in which order to plot name on the x axis.
+lda_top_terms14$term <- factor(lda_top_terms14$term, levels = lda_top_terms14$term[order(lda_top_terms14$log_ratio41)])
+
+# Words with the greatest difference in beta between topic 2 and topic 1
+lda_top_terms14 %>%
+  ggplot(aes(log_ratio41, term, fill = (log_ratio41 > 0))) +
+  geom_col(show.legend = FALSE) +
+  scale_y_reordered() +
+  theme_minimal()
+```
+
+```{r}
+# topic 1 versus topic 5
+lda_top_terms1 <- beta_wide %>%
+  slice_max(log_ratio51, n = 10) %>%
+  arrange(term, -log_ratio51)
+
+lda_top_terms2 <- beta_wide %>%
+  slice_max(-log_ratio51, n = 10) %>%
+  arrange(term, -log_ratio51)
+
+lda_top_terms15 <- rbind(lda_top_terms1, lda_top_terms2)
+
+# this is for ggplot to understand in which order to plot name on the x axis.
+lda_top_terms15$term <- factor(lda_top_terms15$term, levels = lda_top_terms15$term[order(lda_top_terms15$log_ratio51)])
+
+# Words with the greatest difference in beta between topic 2 and topic 1
+lda_top_terms15 %>%
+  ggplot(aes(log_ratio51, term, fill = (log_ratio51 > 0))) +
+  geom_col(show.legend = FALSE) +
+  scale_y_reordered() +
+  theme_minimal()
+```
+
+**13: Besides estimating each topic as a mixture of words, LDA also models each document as a mixture of topics. We can examine the per-document-per-topic probabilities, called “gamma”, with the `matrix = "gamma"` argument in the `tidy()` function. Call this function for your LDA model and save the probabilities in a variable named `lda_documents`.**
+```{r}
+lda_documents <- tidy(out_lda, matrix = "gamma")
+```
+
+**14: Check the topic probabilities for documents with the index number of 1, 1000, 2000, 2225.**
+```{r}
+lda_documents[lda_documents$document == 1,]
+lda_documents[lda_documents$document == 1000,]
+lda_documents[lda_documents$document == 2000,]
+lda_documents[lda_documents$document == 2225,]
+
+tidy(dtm) %>%
+  filter(document == 2225) %>%
+  arrange(desc(count))
+```
+
+**15: Use the code below to visualize the topic probabilities for the example documents in question 14.**
+```{r}
+# reorder titles in order of topic 1, topic 2, etc before plotting
+lda_documents[lda_documents$document %in% c(1, 1000, 2000, 2225),] %>%
+  mutate(document = reorder(document, gamma * topic)) %>%
+  ggplot(aes(factor(topic), gamma)) +
+  geom_boxplot() +
+  facet_wrap(~ document) +
+  labs(x = "topic", y = expression(gamma)) +
+  theme_minimal()
+```
+
+-----
+
+# Alternative LDA implementations
+
+The `LDA()` function in the `topicmodels` package is only one implementation of the latent Dirichlet allocation algorithm. For example, the `mallet` package (Mimno 2013) implements a wrapper around the MALLET Java package for text classification tools, and the `tidytext` package provides tidiers for this model output as well. The `textmineR` package has extensive functionality for topic modeling. You can fit Latent Dirichlet Allocation (LDA), Correlated Topic Models (CTM), and Latent Semantic Analysis (LSA) from within `textmineR`.
+
+-----
+
+# End of document
+
+-----
+
+```{r}
+sessionInfo()
+```
+
