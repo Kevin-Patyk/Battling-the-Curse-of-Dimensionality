@@ -1,0 +1,288 @@
+---
+title: "Practical 8"
+author: "Kevin Patyk"
+date: "1/27/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
+```
+
+# Introduction
+
+In this practical, we will learn word embeddings to represent text data, and we will also analyse a recurrent neural network.
+
+We use the following packages.
+```{r message=FALSE, warning=FALSE}
+library(magrittr)  # for pipes
+library(tidyverse) # for tidy data and pipes
+library(ggplot2)   # for visualization
+library(qdap)      # provides parsing tools for preparing transcript data
+library(wordcloud) # to create pretty word clouds
+library(stringr)   # for regular expressions
+library(text2vec)  # for word embedding
+library(tidytext)  # for text mining
+library(tensorflow)
+library(keras)
+```
+
+-----
+
+# Word embedding
+
+In the first part of the practical, we will apply word embedding approaches. A key idea in working with text data concerns representing words as numeric quantities. There are a number of ways to go about this as we reviewed in the lecture. Word embedding techniques such as word2vec and GloVe use neural networks approaches to construct word vectors. With these vector representations of words we can see how similar they are to each other, and also perform other tasks such as sentimetn classification.
+
+Let’s start the word embedding part with installing the `harrypotter` package using `devtools`. The `harrypotter` package supplies the first seven novels in the Harry Potter series. You can install and load this package with the following code.
+```{r message=FALSE, warning=FALSE}
+#devtools::install_github("bradleyboehmke/harrypotter")
+library(harrypotter) # Not to be confused with the CRAN palettes package
+```
+
+**1: Use the code below to load the first seven novels in the Harry Potter series.**
+```{r}
+hp_books <- c("philosophers_stone", "chamber_of_secrets",
+              "prisoner_of_azkaban", "goblet_of_fire",
+              "order_of_the_phoenix", "half_blood_prince",
+              "deathly_hallows")
+
+hp_words <- list(
+  philosophers_stone,
+  chamber_of_secrets,
+  prisoner_of_azkaban,
+  goblet_of_fire,
+  order_of_the_phoenix,
+  half_blood_prince,
+  deathly_hallows
+) %>%
+  # name each list element
+  set_names(hp_books) %>%
+  # convert each book to a data frame and merge into a single data frame
+  map_df(as_tibble, .id = "book") %>%
+  # convert book to a factor
+  mutate(book = factor(book, levels = hp_books)) %>%
+  # remove empty chapters
+  filter(!is.na(value)) %>%
+  # create a chapter id column
+  group_by(book) %>%
+  mutate(chapter = row_number(book))
+
+head(hp_words)
+```
+
+**2: Convert the hp_words object into a dataframe and use the `unnest_tokens()` function from the `tidytext` package to tokenize the dataframe.**
+```{r}
+hp_words <- as.data.frame(hp_words) %>%
+  unnest_tokens(word, value)
+
+head(hp_words)
+```
+
+**3: Remove the stop words from the tokenized data frame.**
+```{r}
+hp_words <- hp_words %>% 
+  anti_join(stop_words)
+
+head(hp_words)
+```
+
+**4: Creates a vocabulary of unique terms using the `create_vocabulary()` function from the `text2vec` package and remove the words that they appear less than 5 times.**
+```{r}
+hp_words_ls <- list(hp_words$word)
+it <- itoken(hp_words_ls, progressbar = FALSE) # create index-tokens
+hp_vocab <- create_vocabulary(it)
+hp_vocab <- prune_vocabulary(hp_vocab, term_count_min = 5)
+
+hp_vocab
+```
+
+**5: The next step is to create a token co-occurrence matrix (TCM). The definition of whether two words occur together is arbitrary. First create a `vocab_vectorizer`, then use a window of 5 for context words to create the TCM.**
+```{r}
+# maps words to indices
+vectorizer <- vocab_vectorizer(hp_vocab)
+
+# use window of 10 for context words
+hp_tcm <- create_tcm(it, vectorizer, skip_grams_window = 5)
+
+dim(hp_tcm)
+```
+
+**6: Use the `GlobalVectors` as given in the code below to fit the word vectors on our data set. Choose the embedding size (rank variable) equal to 50, and the maximum number of co-occurrences equal to 10. Train word vectors in 20 iterations. You can check the full input arguments of the `fit_transform` function on the internet.**
+```{r}
+glove <- GlobalVectors$new(rank = 50, x_max = 10)
+hp_wv_main <- glove$fit_transform(hp_tcm, n_iter = 20, convergence_tol = 0.001)
+```
+
+**7: The GloVe model learns two sets of word vectors: main and context. Essentially they are the same since the model is symmetric. From the experience learning two sets of word vectors leads to higher quality embeddings. Best practice is to combine both the main word vectors and the context word vectors into one matrix. Extract the word vectors and save the summation of them for further questions.**
+```{r}
+dim(hp_wv_main)
+
+hp_wv_context <- glove$components
+dim(hp_wv_context)
+
+# Either word-vectors matrices could work, but the developers of the technique suggest the sum/mean may work better
+hp_word_vectors <- hp_wv_main + t(hp_wv_context)
+
+dim(hp_word_vectors)
+```
+
+**8: Find the most similar words to words “harry”, “death”, and “love”. Use the sim2 function with the cosine similary measure.**
+```{r}
+harry <- hp_word_vectors["harry", , drop = F]
+
+cos_sim_rom <- sim2(x = hp_word_vectors, y = harry, method = "cosine", norm = "l2")
+head(sort(cos_sim_rom[,1], decreasing = T), 10)
+
+death <- hp_word_vectors["death", , drop = F]
+
+cos_sim_rom <- sim2(x = hp_word_vectors, y = death, method = "cosine", norm = "l2")
+head(sort(cos_sim_rom[,1], decreasing = T), 10)
+
+love <- hp_word_vectors["love", , drop = F]
+
+cos_sim_rom <- sim2(x = hp_word_vectors, y = love, method = "cosine", norm = "l2")
+head(sort(cos_sim_rom[,1], decreasing = T), 10)
+```
+
+**9: Now you can play with word vectors! For example, add the word vector of “harry” with the word vector of “love” and subtract them from the word vector of “death”. What are the top terms in your result?**
+```{r}
+test <- hp_word_vectors["harry", , drop = F] -
+  hp_word_vectors["death", , drop = F] +
+  hp_word_vectors["love", , drop = F]
+
+cos_sim_test <- sim2(x = hp_word_vectors, y = test, method = "cosine", norm = "l2")
+head(sort(cos_sim_test[,1], decreasing = T), 10)
+```
+
+-----
+
+# Sentiment classification with RNN
+
+For sentiment classification with pre-trained word vectors, we want to use GloVe pretrained word vectors. These word vectors were trained on Wikipedia 2014 and Gigaword 5 containing 6B tokens, 400K vocab, uncased, 50d, 100d, 200d, & 300d vectors. Download the `glove.6B.300d.txt` file manually from the website or use the code below for this purpose.
+```{r}
+# Download Glove vectors if necessary
+#if (!file.exists('glove.6B.zip')) {
+#download.file('https://nlp.stanford.edu/data/glove.6B.zip', destfile = 'glove.6B.zip')
+#unzip('glove.6B.zip')
+#}
+```
+
+*NOTE*: This analysis will not be run since `keras` has a lot of issues in `R`. 
+
+**12: Use the code below to load the pre-trained word vectors from the file `glove.6B.300d.txt` (if you have memory issues load the file `glove.6B.50d.txt` instead).**
+```{r warning=FALSE, message=FALSE, eval=FALSE}
+# load glove vectors
+vectors <- data.table::fread('glove.6B.300d.txt', data.table = F, encoding = 'UTF-8')
+colnames(vectors) <- c('word', paste('dim',1:300,sep = '_'))
+
+# convert vectors to dataframe
+vectors <- as_tibble(vectors)
+```
+
+**13: IMDB movie reviews is a labeled data set available with the `text2vec` package. This data set consists of 5000 IMDB movie reviews, specially selected for sentiment analysis. The sentiment of the reviews is binary, meaning an IMDB rating < 5 results in a sentiment score of 0, and a rating >=7 has a sentiment score of 1. No individual movie has more than 30 reviews. Load this data set and convert it to a dataframe.**
+```{r eval=FALSE}
+# load an example dataset from text2vec
+data("movie_review")
+as_tibble(movie_review)
+```
+
+**14: To create a learning model using `keras`, let’s first define the hyperparameters. Define the parameters of your `keras` model with a maximum of 10000 words, `maxlen` of 60 and word embedding size of 300 (if you had memory problems change the embedding dimension to a smaller value, e.g., 50).**
+```{r eval=FALSE}
+max_words <- 1e4
+maxlen    <- 60
+dim_size  <- 300
+```
+
+**15: Use the `text_tokenizer` function from `keras` and tokenize the imdb review data using a maximum of 10000 words.**
+```{r eval=FALSE}
+# tokenize the input data and then fit the created object
+word_seqs <- text_tokenizer(num_words = max_words) %>%
+  fit_text_tokenizer(movie_review$review)
+```
+
+**16: Transform each text into a sequence of integers (word indices) and use the `pad_sequences` function to pad the sequences.**
+```{r eval=FALSE}
+# apply tokenizer to the text and get indices instead of words later pad the sequence
+x_train <- texts_to_sequences(word_seqs, movie_review$review) %>%
+  pad_sequences(maxlen = maxlen)
+```
+
+**17: Convert the sequence into a dataframe.**
+```{r eval=FALSE}
+# unlist word indices
+word_indices <- unlist(word_seqs$word_index)
+
+# then place them into data.frame 
+dic <- data.frame(word = names(word_indices), key = word_indices, stringsAsFactors = FALSE) %>%
+  arrange(key) %>% .[1:max_words,]
+```
+
+**18: Use the code below to join the dataframe of sequences (word indices) from the IMDB reviews with GloVe pre-trained word vectors.**
+```{r eval=FALSE}
+# join the words with GloVe vectors and if a word does not exist in GloVe, then fill NA's with 0
+word_embeds <- dic  %>% left_join(vectors) %>% .[,3:302] %>% replace(., is.na(.), 0) %>% as.matrix()
+```
+
+**19: Extract the outcome variable from the sentiment column in the original dataframe and name it `y_train`.**
+```{r eval=FALSE}
+# the outcome variable
+y_train <- as.matrix(movie_review$sentiment)
+```
+
+**20: Use the `keras` functional API and create a recurrent neural network model as below. Can you describe this model?**
+```{r eval=FALSE}
+# Use Keras Functional API 
+input <- layer_input(shape = list(maxlen), name = "input")
+
+model <- input %>%
+  layer_embedding(input_dim = max_words, output_dim = dim_size, input_length = maxlen,
+                  # put weights into list and do not allow training
+                  weights = list(word_embeds), trainable = FALSE) %>%
+  layer_spatial_dropout_1d(rate = 0.2) %>%
+  bidirectional(
+    layer_gru(units = 80, return_sequences = TRUE)
+  )
+max_pool <- model %>% layer_global_max_pooling_1d()
+ave_pool <- model %>% layer_global_average_pooling_1d()
+
+output <- layer_concatenate(list(ave_pool, max_pool)) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+model <- keras_model(input, output)
+
+# model summary
+model
+```
+
+**21. Compile the model with an `adam` optimizer, and the `binary_crossentropy` loss. You can choose accuracy or AUC for the metrics.**
+```{r eval=FALSE}
+# instead of accuracy we can use "AUC" metrics from "tensorflow.keras"
+model %>% compile(
+  optimizer = "adam", # optimizer = optimizer_rmsprop(),
+  loss = "binary_crossentropy",
+  metrics = tensorflow::tf$keras$metrics$AUC() # metrics = c('accuracy')
+)
+```
+
+**22: Fit the model with 10 epochs (iterations), `batch_size = 32`, and `validation_split = 0.2`. Check the training performance versus the validation performance.**
+```{r eval=FALSE}
+history <- model %>% keras::fit(
+  x_train, y_train,
+  epochs = 10,
+  batch_size = 32,
+  validation_split = 0.2
+)
+
+plot(history)
+```
+
+-----
+
+# End of document
+
+-----
+
+```{r}
+sessionInfo()
+```
+

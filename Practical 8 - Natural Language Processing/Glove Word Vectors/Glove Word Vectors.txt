@@ -1,0 +1,1 @@
+The Glove Word Vector files are too big to store on GitHub. They can be downloaded here: https://nlp.stanford.edu/projects/glove/
